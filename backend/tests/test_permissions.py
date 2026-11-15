@@ -5,10 +5,11 @@ import pytest
 from pydantic import ValidationError
 
 from src.constants.enums import Role
-from src.constants.roles import EXPORT_ROLES, PERMISSIONS, ROLE_LABELS, has_permission
+from src.constants.roles import EXPORT_ROLES, PERMISSIONS, ROLE_LABELS, TARGET_WRITE_ROLES, has_permission
 from src.schemas.anomaly import ReviewIn
 from src.schemas.run import RunIn
 from src.schemas.store import StoreIn
+from src.schemas.target import StoreTargetIn, TargetBatchIn, TransferIn
 from src.utils.pagination import page_params
 
 
@@ -64,3 +65,25 @@ def test_pagination_clamped():
     assert page_params(0, -5).limit == 1
     assert page_params(9999, -5).offset == 0
     assert page_params(500, 0).limit == 200
+
+
+def test_target_permissions_read_all_write_admin_only():
+    for role in ("admin", "analyst", "viewer"):
+        assert has_permission(role, "target:read") is True
+    assert has_permission("admin", "target:write") is True
+    assert has_permission("analyst", "target:write") is False
+    assert has_permission("viewer", "target:write") is False
+    assert TARGET_WRITE_ROLES == (Role.ADMIN.value,)
+
+
+def test_target_payload_validation():
+    with pytest.raises(ValidationError):
+        TargetBatchIn(month="2026-13")
+    with pytest.raises(ValidationError):
+        TargetBatchIn(month="202611")
+    with pytest.raises(ValidationError):
+        StoreTargetIn(store_code="LB-HD-001", month="2026-11", target_amount=0)
+    with pytest.raises(ValidationError):
+        TransferIn(to_region="华东", effective_date="2026/11/10")
+    assert TargetBatchIn(month="2026-11").month == "2026-11"
+    assert StoreTargetIn(store_code="LB-HD-001", month="2026-11", target_amount=100).target_amount == 100

@@ -12,6 +12,8 @@ from src.routes.overview import router as overview_router
 from src.routes.reports import router as reports_router
 from src.routes.runs import router as runs_router
 from src.routes.stores import router as stores_router
+from src.routes.targets import router as targets_router
+from src.routes.transfers import router as transfers_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
@@ -23,5 +25,7 @@ api_router.include_router(runs_router)
 api_router.include_router(anomalies_router)
 api_router.include_router(attributions_router)
 api_router.include_router(reports_router)
+api_router.include_router(targets_router)
+api_router.include_router(transfers_router)
 api_router.include_router(exports_router)
 api_router.include_router(audit_router)

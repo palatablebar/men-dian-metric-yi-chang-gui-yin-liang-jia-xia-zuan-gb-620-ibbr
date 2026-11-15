@@ -25,13 +25,13 @@
 
 | 角色 | 账号 | 权限 | 典型动作 |
 |---|---|---|---|
-| 经营管理员 `admin` | `admin@anomalyattr.io` | 只读 + 门店维护 + 检测 + 处理 + 报告生成 + 导出 + 审计 | 登记门店、生成/发布报告、导出明细、查审计 |
+| 经营管理员 `admin` | `admin@anomalyattr.io` | 只读 + 门店维护 + 检测 + 处理 + 报告生成 + 目标下达/发布 + 导出 + 审计 | 登记门店、登记跨区调整、下达月目标、生成/发布报告与目标批次、导出明细、查审计 |
 | 经营分析师 `analyst` | `analyst@anomalyattr.io` | 只读 + 检测 + 处理异常 + 导出 | 发起检测、写归因结论、导出异常清单 |
 | 区域只读 `viewer` | `viewer@anomalyattr.io` | 只读总览/门店/异常/归因/报告 | 看数、看结论，不能写、不能导出、不能看审计 |
 
-密码统一 `Demo@2026`。低权角色调用高权接口返回**真实 HTTP 403**（`GET /api/exports/anomalies.csv`、`GET /api/audit`、`PATCH /api/anomalies/{id}/review`、`POST /api/reports`），无 token 401，非法参数 422，重复自然键 409。
+密码统一 `Demo@2026`。低权角色调用高权接口返回**真实 HTTP 403**（`GET /api/exports/anomalies.csv`、`GET /api/audit`、`PATCH /api/anomalies/{id}/review`、`POST /api/reports`、`POST /api/target-batches`、`PUT /api/targets`），无 token 401，非法参数 422，重复自然键 409。
 
-## 3. 业务模块（6 个，可串成一条链路）
+## 3. 业务模块（7 个，可串成一条链路）
 
 | # | 模块 | 对应页面 | 对应 services + controller | 主要 API |
 |---|---|---|---|---|
@@ -41,6 +41,7 @@
 | ④ | 维度下钻归因 | `#/attribution` 归因下钻 | `attribution_service`（门店/渠道/房型三维） | 同上（`dimensions` 字段） |
 | ⑤ | 结论与处理工单 | `#/anomalies` 异常清单（抽屉） | `anomaly_service` / `anomaly_controller` | `PATCH /api/anomalies/{id}/review` |
 | ⑥ | 报告与导出 | `#/reports` 报告与导出 | `report_service` + `export_service` / `report_controller` + `export_controller` | `POST/PATCH /api/reports`、`GET /api/exports/{anomalies,attributions,channels,reports}.csv` |
+| ⑦ | 区域月目标分期（算法 C） | `#/targets` 区域月目标 | `target_split` + `target_service` + `transfer_service` / `target_controller` + `store_controller` | `GET/PUT /api/targets`、`GET/POST /api/target-batches`、`POST /api/target-batches/{id}/publish`、`GET /api/target-batches/{id}/regions/{region}`、`GET/POST /api/stores/{id}/transfers` |
 
 > 登录、审计、限流属于横切能力，不计入业务模块。总览页 `#/overview` 是这 6 个模块的汇总视图。
 
@@ -93,8 +94,8 @@ backend/
   src/{config,constants,controllers,middlewares,models,routes,schemas,services,utils}
        services/{detection.py,decompose.py,...}     # 两个算法独立模块（纯函数、可单测）
   scripts/{demo_data.py,demo_config.py,seed_demo.py,worker_healthcheck.sh}
-  migrations/001_core_tables.sql                    # 表结构参考（运行时不执行）
-  tests/{test_detection.py,test_decompose.py,test_seed_data.py,test_permissions.py,test_security.py}
+  migrations/{001_core_tables.sql,002_target_tables.sql}  # 表结构参考（运行时不执行）
+  tests/{test_detection.py,test_decompose.py,test_seed_data.py,test_permissions.py,test_security.py,test_target_split.py}
 frontend/site/{index.html,css/{tokens,app}.css,js/{config,api,store,ui,app}.js,js/pages/*.js}
 docker-compose.yml  .env  README.md
 ```
@@ -109,6 +110,10 @@ docker-compose.yml  .env  README.md
 | `Attribution` 归因 | `attributions` | `anomaly_id` | model → `attribution_service` → `attribution_controller` → `api.attributions` → 归因页 |
 | `Report` 报告 | `reports` | `report_no` | model → schema → `report_service` → `report_controller` → `api.reports` → 报告页 |
 | `Run` 检测批次 | `runs` | `run_no` / `seed_key` | model → `run_service` → `run_controller` → 异常清单「发起检测」 |
+| `StoreMonthTarget` 门店月目标 | `store_month_targets` | `(store_id, month)` | model → `target_service` → `target_controller` → `api.targets` → 目标页「门店月目标」 |
+| `StoreRegionTransfer` 跨区调整 | `store_region_transfers` | `(store_id, effective_date)` | model → `transfer_service` → `store_controller` → `api.transfers` → 门店抽屉 / 目标页影响说明 |
+| `TargetBatch` 目标批次 | `target_batches` | `(month, version)` / `seed_key` | model → `target_service` → `target_controller` → `api.targets` → 目标页批次表 |
+| `TargetLine` 目标分期行 | `target_lines` | `(batch_id, store_id, segment_no)` | model → `target_service` → 批次详情 / 区域明细 |
 
 ## 10. 核心算法与口径
 
@@ -133,6 +138,16 @@ docker-compose.yml  .env  README.md
 - **失败态**：任一因子 ≤ 0 或营收 ≤ 0 → `status="degenerate"`，只回原始三元组与原因。
 - **确定性**：同输入同输出（`test_decompose.py::test_deterministic_output`）。
 
+### 算法 C｜区域月目标分期拆分（`backend/src/services/target_split.py`）
+
+- **问题**：区域月目标若按门店「当前归属」汇总，月中跨区调整会把历史目标整段带进新区域，区域排名与门店明细对不上。
+- **归属区间**：以 `store_region_transfers` 为准重建时间轴 —— 调整**生效日当天起**计入新区域，生效前（含前一日）仍计入原区域；生效日 = 月初 → 整月计入新区域；生效日 > 月末 → 本月不受影响。
+- **拆分**：门店月目标按区间天数比例拆段，金额以「分」计算，前 N−1 段四舍五入、**最后一段吸收舍入残差** → `Σ分段 ≡ 门店月目标`。
+- **对平**：全集团合计 = Σ区域合计 = Σ门店合计（同一批分期行聚合，分毫不差；`reconcile.balanced`）。
+- **幂等**：重跑同一月的草稿批次 = 原地替换分期行（`(batch_id, store_id, segment_no)` 唯一约束兜底），不新增版本、不产生重复行；最新版**已发布**时重跑 = 自动新开 `version+1` 草稿，已发布版内容不被改换。
+- **中断恢复**：生成/发布先把批次置 `running`/`publishing` 并提交（`prev_status` 记录原状态），随后在**单事务**内完成全部写入。进程中断 → 写入事务回滚、旧行原样保留；下次生成/发布前 `recover_interrupted` 先把停留中间态的批次恢复旧版（全新批次无已提交内容则删除）再续跑，不丢数据，恢复动作写审计（`target.recover`）。
+- **确定性**：纯函数、无随机；同输入两次输出逐字段一致（`test_target_split.py::test_deterministic_output`）。
+
 ## 11. 共享枚举出现位置
 
 | 枚举 | 后端 | 前端 |
@@ -145,6 +160,7 @@ docker-compose.yml  .env  README.md
 | 方向 `up/down` | `constants/enums.py::Direction` | `js/config.js::ENUMS.direction` |
 | 运行状态 `queued/running/success/partial/failed` | `constants/enums.py::RunStatus` | `js/config.js::ENUMS.runStatus` |
 | 报告类型/状态 `daily/weekly`、`draft/published` | `constants/enums.py::ReportKind/ReportStatus` | `js/config.js::ENUMS.reportKind / reportStatus` |
+| 目标批次状态 `draft/running/publishing/published/archived` | `constants/enums.py::TargetBatchStatus` | `js/config.js::ENUMS.targetBatchStatus` |
 
 ## 12. Docker 说明
 

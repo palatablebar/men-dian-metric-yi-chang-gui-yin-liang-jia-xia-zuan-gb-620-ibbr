@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from src.services import audit_service, store_service
+from src.services import audit_service, store_service, transfer_service
 
 
 def list_stores(db: Session, **filters) -> dict:
@@ -46,3 +46,32 @@ def update_store(db: Session, store_id: int, payload: dict, principal: dict, req
     )
     db.commit()
     return store_service.serialize(store)
+
+
+def list_transfers(db: Session, store_id: int) -> dict:
+    store = store_service.get_store(db, store_id)
+    return {
+        "items": [transfer_service.serialize(row, store) for row in transfer_service.transfers_of(db, store.id)],
+    }
+
+
+def create_transfer(db: Session, store_id: int, payload: dict, principal: dict, request: Request) -> dict:
+    store = store_service.get_store(db, store_id)
+    transfer = transfer_service.record_transfer(db, store, payload, principal["email"])
+    audit_service.record(
+        db,
+        actor_email=principal["email"],
+        actor_role=principal["role"],
+        action="store.transfer",
+        entity="store",
+        entity_id=store.id,
+        detail={
+            "code": store.code,
+            "from_region": transfer.from_region,
+            "to_region": transfer.to_region,
+            "effective_date": transfer.effective_date.isoformat(),
+        },
+        ip=request.client.host if request.client else None,
+    )
+    db.commit()
+    return transfer_service.serialize(transfer, store)

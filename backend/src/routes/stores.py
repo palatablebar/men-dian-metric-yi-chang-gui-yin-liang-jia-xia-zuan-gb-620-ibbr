@@ -8,6 +8,7 @@ from src.constants.roles import READ_ROLES, STORE_WRITE_ROLES
 from src.controllers import store_controller
 from src.middlewares.rbac import require_roles
 from src.schemas.store import StoreIn, StorePatch
+from src.schemas.target import TransferIn
 from src.services import metric_service, store_service
 from src.utils.pagination import page_params
 
@@ -89,3 +90,23 @@ def update_store(
     principal: dict = Depends(require_roles(*STORE_WRITE_ROLES)),
 ) -> dict:
     return store_controller.update_store(db, store_id, payload.model_dump(exclude_unset=True), principal, request)
+
+
+@router.get("/{store_id}/transfers")
+def list_transfers(
+    store_id: int,
+    db: Session = Depends(get_db),
+    principal: dict = Depends(require_roles(*READ_ROLES)),
+) -> dict:
+    return store_controller.list_transfers(db, store_id)
+
+
+@router.post("/{store_id}/transfers", status_code=201)
+def create_transfer(
+    store_id: int,
+    payload: TransferIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    principal: dict = Depends(require_roles(*STORE_WRITE_ROLES)),
+) -> dict:
+    return store_controller.create_transfer(db, store_id, payload.model_dump(), principal, request)

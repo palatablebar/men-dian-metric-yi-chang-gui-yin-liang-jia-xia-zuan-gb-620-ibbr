@@ -23,8 +23,9 @@ export const NAV = [
   { to: '#/stores', no: '02', label: '门店与指标', permission: 'store:read' },
   { to: '#/anomalies', no: '03', label: '异常清单', permission: 'anomaly:read' },
   { to: '#/attribution', no: '04', label: '归因下钻', permission: 'anomaly:read' },
-  { to: '#/reports', no: '05', label: '报告与导出', permission: 'report:read' },
-  { to: '#/audit', no: '06', label: '审计日志', permission: 'audit:read' },
+  { to: '#/targets', no: '05', label: '区域月目标', permission: 'target:read' },
+  { to: '#/reports', no: '06', label: '报告与导出', permission: 'report:read' },
+  { to: '#/audit', no: '07', label: '审计日志', permission: 'audit:read' },
 ];
 
 export const ROLE_LABELS = {
@@ -36,13 +37,14 @@ export const ROLE_LABELS = {
 export const PERMISSIONS = {
   admin: [
     'overview:read', 'store:read', 'store:write', 'metric:read', 'anomaly:read', 'anomaly:review',
-    'run:read', 'run:create', 'report:read', 'report:generate', 'export:read', 'audit:read',
+    'run:read', 'run:create', 'report:read', 'report:generate', 'target:read', 'target:write',
+    'export:read', 'audit:read',
   ],
   analyst: [
     'overview:read', 'store:read', 'metric:read', 'anomaly:read', 'anomaly:review',
-    'run:read', 'run:create', 'report:read', 'export:read',
+    'run:read', 'run:create', 'report:read', 'target:read', 'export:read',
   ],
-  viewer: ['overview:read', 'store:read', 'metric:read', 'anomaly:read', 'run:read', 'report:read'],
+  viewer: ['overview:read', 'store:read', 'metric:read', 'anomaly:read', 'run:read', 'report:read', 'target:read'],
 };
 
 export const ENUMS = {
@@ -56,6 +58,7 @@ export const ENUMS = {
   trigger: { manual: '手动', schedule: '定时', seed: '初始化' },
   reportKind: { daily: '日报', weekly: '周报' },
   reportStatus: { draft: '草稿', published: '已发布' },
+  targetBatchStatus: { draft: '草稿', running: '生成中', publishing: '发布中', published: '已发布', archived: '已归档' },
   factor: { adr: '房价 ADR', occ: '出租率 OCC', rooms: '可售房量' },
 };
 

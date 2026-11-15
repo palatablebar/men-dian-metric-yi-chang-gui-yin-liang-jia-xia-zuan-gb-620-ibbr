@@ -14,6 +14,7 @@ from src.models.run import Run  # noqa: E402
 from src.models.anomaly import Anomaly  # noqa: E402
 from src.models.attribution import Attribution  # noqa: E402
 from src.models.report import Report  # noqa: E402
+from src.models.target import StoreMonthTarget, StoreRegionTransfer, TargetBatch, TargetLine  # noqa: E402
 
 __all__ = [
     "Base",
@@ -25,4 +26,8 @@ __all__ = [
     "Anomaly",
     "Attribution",
     "Report",
+    "StoreMonthTarget",
+    "StoreRegionTransfer",
+    "TargetBatch",
+    "TargetLine",
 ]

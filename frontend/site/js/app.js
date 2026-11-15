@@ -7,6 +7,7 @@ import overviewPage from './pages/overview.js';
 import storesPage from './pages/stores.js';
 import anomaliesPage from './pages/anomalies.js';
 import attributionPage from './pages/attribution.js';
+import targetsPage from './pages/targets.js';
 import reportsPage from './pages/reports.js';
 import auditPage from './pages/audit.js';
 
@@ -15,6 +16,7 @@ const routes = [
   { path: '#/stores', page: storesPage, permission: 'store:read' },
   { path: '#/anomalies', page: anomaliesPage, permission: 'anomaly:read' },
   { path: '#/attribution', page: attributionPage, permission: 'anomaly:read' },
+  { path: '#/targets', page: targetsPage, permission: 'target:read' },
   { path: '#/reports', page: reportsPage, permission: 'report:read' },
   { path: '#/audit', page: auditPage, permission: 'audit:read' },
 ];

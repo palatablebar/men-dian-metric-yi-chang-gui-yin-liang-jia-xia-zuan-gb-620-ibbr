@@ -111,6 +111,14 @@ def room_mix(index: int) -> dict:
     }
 
 
+def store_month_target(spec: dict, month: str, growth: float = 1.05) -> float:
+    """门店月目标（确定性）：日均营收基线 × 当月天数 × 增长系数，整千取整。"""
+    year, mon = int(month[:4]), int(month[5:7])
+    days = 31 if mon == 12 else (date(year, mon + 1, 1) - date(year, mon, 1)).days
+    daily = spec["occ_base"] * spec["adr_base"] * spec["room_count"]
+    return float(round(daily * days * growth / 1000) * 1000)
+
+
 def _days() -> list[date]:
     return [START_DATE + timedelta(days=offset) for offset in range(DAYS)]
 

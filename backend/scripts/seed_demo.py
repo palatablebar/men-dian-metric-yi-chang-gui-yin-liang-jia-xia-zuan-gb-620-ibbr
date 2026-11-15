@@ -23,8 +23,9 @@ from src.models.metric import MetricPoint
 from src.models.report import Report
 from src.models.run import Run
 from src.models.store import Store
+from src.models.target import StoreMonthTarget, StoreRegionTransfer, TargetBatch
 from src.models.user import User
-from src.services import attribution_service, report_service, run_service
+from src.services import attribution_service, report_service, run_service, target_service, transfer_service
 from src.utils.logger import get_logger
 from src.utils.security import hash_password
 
@@ -35,8 +36,11 @@ from scripts.demo_config import (
     SEED_REPORT,
     SEED_REVIEWS,
     SEED_RUN,
+    SEED_TARGET_GROWTH,
+    SEED_TARGET_MONTHS,
+    SEED_TRANSFERS,
 )
-from scripts.demo_data import build_dataset
+from scripts.demo_data import build_dataset, store_month_target
 
 logger = get_logger("seed")
 
@@ -194,6 +198,58 @@ def ensure_audit(db) -> None:
     db.flush()
 
 
+def ensure_store_targets(db, specs: list[dict], stores: dict[str, Store]) -> int:
+    """下达 2026-10 / 2026-11 门店月目标（确定性金额；已存在的行不覆盖，保留人工修改）。"""
+    by_code = {spec["code"]: spec for spec in specs}
+    for month in SEED_TARGET_MONTHS:
+        month_start = date.fromisoformat(f"{month}-01")
+        for code, store in stores.items():
+            spec = by_code.get(code)
+            if spec is None:
+                continue
+            exists = db.scalar(
+                select(StoreMonthTarget).where(
+                    StoreMonthTarget.store_id == store.id,
+                    StoreMonthTarget.month == month_start,
+                )
+            )
+            if exists is None:
+                db.add(
+                    StoreMonthTarget(
+                        store_id=store.id,
+                        month=month_start,
+                        target_amount=store_month_target(spec, month, SEED_TARGET_GROWTH),
+                        updated_by="seed",
+                    )
+                )
+    db.flush()
+    return db.scalar(select(func.count()).select_from(StoreMonthTarget)) or 0
+
+
+def ensure_transfers(db, stores: dict[str, Store]) -> int:
+    """预置 3 笔跨区调整：月前生效 / 月中生效 / 未来生效各一笔。"""
+    demo_today = date(2026, 11, 14)  # 演示时间线固定参考日，保证重复 seed 结果一致
+    for spec in SEED_TRANSFERS:
+        exists = db.scalar(select(StoreRegionTransfer).where(StoreRegionTransfer.seed_key == spec["seed_key"]))
+        if exists is not None:
+            continue
+        store = stores.get(spec["store_code"])
+        if store is None:
+            continue
+        transfer_service.record_transfer(db, store, dict(spec), "seed", today=demo_today)
+    db.flush()
+    return db.scalar(select(func.count()).select_from(StoreRegionTransfer)) or 0
+
+
+def ensure_target_batches(db) -> int:
+    """生成并发布各月目标批次 v1；seed_key 幂等，重跑不新增版本、不改已发布内容。"""
+    for month in SEED_TARGET_MONTHS:
+        batch = target_service.generate(db, month, "admin@anomalyattr.io", seed_key=f"seed-target-batch-{month}")
+        if batch.status == "draft":
+            target_service.publish(db, batch, "admin@anomalyattr.io")
+    return db.scalar(select(func.count()).select_from(TargetBatch)) or 0
+
+
 def seed_all() -> dict:
     dataset = build_dataset()
     with session_scope() as db:
@@ -205,6 +261,9 @@ def seed_all() -> dict:
         ensure_reviews(db)
         ensure_report(db)
         ensure_audit(db)
+        target_rows = ensure_store_targets(db, dataset["stores"], stores)
+        transfer_rows = ensure_transfers(db, stores)
+        target_batches = ensure_target_batches(db)
         store_total = db.scalar(select(func.count()).select_from(Store)) or 0
         runs = db.scalar(select(func.count()).select_from(Run)) or 0
         findings = db.scalar(select(func.count()).select_from(Anomaly)) or 0
@@ -215,6 +274,10 @@ def seed_all() -> dict:
         )
         print(summary, flush=True)
         logger.info("seed run %s -> %s anomalies", run.run_no, run.anomaly_count)
+        logger.info(
+            "seed targets: %s store-month targets / %s transfers / %s batches",
+            target_rows, transfer_rows, target_batches,
+        )
         return {
             "users": users,
             "stores": store_total,

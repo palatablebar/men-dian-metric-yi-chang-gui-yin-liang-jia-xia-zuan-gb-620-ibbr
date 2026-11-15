@@ -150,6 +150,25 @@ class ReportStatus(StrEnum):
 REPORT_STATUS_LABELS: dict[str, str] = {ReportStatus.DRAFT.value: "草稿", ReportStatus.PUBLISHED.value: "已发布"}
 
 
+class TargetBatchStatus(StrEnum):
+    """目标批次生命周期。running/publishing 是中断可恢复的中间态。"""
+
+    DRAFT = "draft"
+    RUNNING = "running"
+    PUBLISHING = "publishing"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+TARGET_BATCH_STATUS_LABELS: dict[str, str] = {
+    TargetBatchStatus.DRAFT.value: "草稿",
+    TargetBatchStatus.RUNNING.value: "生成中",
+    TargetBatchStatus.PUBLISHING.value: "发布中",
+    TargetBatchStatus.PUBLISHED.value: "已发布",
+    TargetBatchStatus.ARCHIVED.value: "已归档",
+}
+
+
 # 算法 A 默认参数（detection.DEFAULTS 的对外镜像，前端只展示不计算）
 DETECTION_DEFAULTS: dict[str, float | int | bool] = {
     "window": 28,

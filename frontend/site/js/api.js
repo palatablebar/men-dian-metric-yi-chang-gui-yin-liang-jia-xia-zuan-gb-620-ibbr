@@ -107,6 +107,20 @@ export const api = {
     create: (body) => request('/api/reports', { method: 'POST', body }),
     publish: (id, body) => request(`/api/reports/${id}`, { method: 'PATCH', body }),
   },
+  targets: {
+    listBatches: (query) => request('/api/target-batches', { query }),
+    getBatch: (id) => request(`/api/target-batches/${id}`),
+    regionDetail: (id, region) => request(`/api/target-batches/${id}/regions/${encodeURIComponent(region)}`),
+    generate: (body) => request('/api/target-batches', { method: 'POST', body }),
+    publish: (id) => request(`/api/target-batches/${id}/publish`, { method: 'POST' }),
+    listStoreTargets: (query) => request('/api/targets', { query }),
+    upsert: (body) => request('/api/targets', { method: 'PUT', body }),
+  },
+  transfers: {
+    list: (query) => request('/api/transfers', { query }),
+    listForStore: (storeId) => request(`/api/stores/${storeId}/transfers`),
+    create: (storeId, body) => request(`/api/stores/${storeId}/transfers`, { method: 'POST', body }),
+  },
   audit: {
     list: (query) => request('/api/audit', { query }),
   },

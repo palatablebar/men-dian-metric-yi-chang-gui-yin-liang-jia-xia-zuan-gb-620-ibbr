@@ -4,18 +4,52 @@ import { bindFilters, drawer, errorBox, errorMessage, esc, field, filterBar, kv,
 
 const state = { q: '', region: '', status: '' };
 
+const REGION_OPTIONS = ['华东', '华南', '华北', '西南', '华中'].map((item) => ({ value: item, label: item }));
+
+function openTransfer(view, ctx, store) {
+  const { root, close } = drawer({
+    title: `登记跨区调整 · ${store.name}`,
+    subtitle: '生效日当天起计入新区域，生效前仍计入原区域；历史目标按生效日分期',
+    body: `<form id="transfer-form" class="stack">
+      ${field({ label: '调入区域', name: 'to_region', value: store.region === '华东' ? '华南' : '华东', options: REGION_OPTIONS })}
+      ${field({ label: '生效日期', name: 'effective_date', type: 'date', value: '2026-11-20' })}
+      ${field({ label: '调整原因', name: 'reason', placeholder: '例如：片区重组，划归新区域管理' })}
+      <div class="form-error" id="transfer-error"></div>
+      <button class="btn accent" type="submit">保存调整</button>
+    </form>`,
+  });
+  root.querySelector('#transfer-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    try {
+      await api.transfers.create(store.id, {
+        to_region: form.to_region.value,
+        effective_date: form.effective_date.value,
+        reason: form.reason.value.trim() || null,
+      });
+      toast('跨区调整已登记；重跑目标批次后按新生效日分期');
+      close();
+      await storesPage.render(view, ctx);
+    } catch (err) {
+      root.querySelector('#transfer-error').textContent = err.code === 'CONFLICT' ? '该生效日已有调整记录' : errorMessage(err);
+    }
+  });
+}
+
 async function openStore(view, ctx, store) {
   let series;
+  let transfers;
   try {
-    series = await api.stores.series(store.id);
+    [series, transfers] = await Promise.all([api.stores.series(store.id), api.transfers.listForStore(store.id)]);
   } catch (err) {
     toast(errorMessage(err), 'err');
     return;
   }
   const points = series.points;
+  const transferRows = transfers.items || [];
   const { root } = drawer({
     title: store.name,
-    subtitle: `${store.code} · ${store.region} · ${store.city} · ${store.status_label}`,
+    subtitle: `${store.code} · 当前归属 ${store.region} · ${store.city} · ${store.status_label}`,
     body: `${kv([
       ['房量', `${store.room_count} 间`],
       ['品牌', esc(store.brand)],
@@ -26,6 +60,20 @@ async function openStore(view, ctx, store) {
     ])}
     <h3 class="sub-head">营收日序列（可标注异常日）</h3>
     ${seriesChart(points, { height: 140 })}
+    <h3 class="sub-head">跨区调整记录</h3>
+    ${
+      transferRows.length
+        ? table({
+            rows: transferRows.map((item) => ({ id: item.id, ...item })),
+            columns: [
+              { key: 'effective_date', label: '生效日', className: 'mono' },
+              { key: 'move', label: '调整', render: (row) => `<span class="badge warn">${esc(row.from_region)} → ${esc(row.to_region)}</span>` },
+              { key: 'reason', label: '原因', render: (row) => esc(row.reason || '—') },
+              { key: 'created_by', label: '登记人', className: 'mono' },
+            ],
+          })
+        : '<p class="muted small">没有跨区调整记录：该店所有月份目标整月计入当前归属区域。</p>'
+    }
     <h3 class="sub-head">指标点（最近 10 条渠道明细）</h3>
     ${table({
       rows: points.slice(-10).reverse().map((point, index) => ({ id: `${point.date}-${index}`, ...point })),
@@ -38,11 +86,15 @@ async function openStore(view, ctx, store) {
         { key: 'is_weekend', label: '周末', render: (row) => (row.is_weekend ? '<span class="badge">周末</span>' : '—') },
       ],
     })}`,
-    footer: `<button class="btn accent" data-anomalies>看这家店的异常</button>`,
+    footer: `<div class="footer-actions">
+      <button class="btn accent" data-anomalies>看这家店的异常</button>
+      ${can(ctx.user.role, 'store:write') ? '<button class="btn ghost" data-transfer>登记跨区调整</button>' : ''}
+    </div>`,
   });
   root.querySelector('[data-anomalies]')?.addEventListener('click', () => {
     location.hash = `#/anomalies?store_id=${store.id}`;
   });
+  root.querySelector('[data-transfer]')?.addEventListener('click', () => openTransfer(view, ctx, store));
 }
 
 function openCreate(view, ctx) {
